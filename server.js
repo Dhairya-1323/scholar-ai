@@ -167,6 +167,13 @@ I can:
     course: course || userProfile.course,
     budget: budget || userProfile.budget,
   });
+if (
+  course &&
+  !userProfile.country &&
+  text.includes("study")
+) {
+  return streamResponse(res, `Which country for ${course}?`);
+}
   // ================= WHAT-IF: SINGLE LOAN =================
 if (text.includes("what if") && text.includes("loan")) {
   const match = text.match(/(\d+)\s*(l|lakh|lakhs)/);
