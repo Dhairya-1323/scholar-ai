@@ -40,7 +40,7 @@ function App() {
       const controller = new AbortController();
       controllerRef.current = controller;
 
-      const response = await fetch("http://localhost:5000/chat", {
+      const response = await fetch("https://scholar-ai-backend-3413.onrender.com/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: userMessage }),
@@ -135,7 +135,7 @@ function App() {
   setSimInput("");
 
   try {
-    const response = await fetch("http://localhost:5000/chat", {
+    const response = await fetch("https://scholar-ai-backend-3413.onrender.com/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
