@@ -27,6 +27,10 @@ function App() {
   }, [chat, loading]);
 
   // ================= MAIN CHAT =================
+  const API_URL =
+  process.env.NODE_ENV === "development"
+    ? "http://localhost:5000/chat"
+    : "https://scholar-ai-backend-3413.onrender.com/chat";
   const send = async () => {
     if (!msg.trim()) return;
 
@@ -40,7 +44,7 @@ function App() {
       const controller = new AbortController();
       controllerRef.current = controller;
 
-      const response = await fetch("https://scholar-ai-backend-3413.onrender.com/chat", {
+      const response = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: userMessage }),
@@ -90,23 +94,13 @@ function App() {
 
       // ================= STREAM =================
       else {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
+  const text = await response.text(); // 👈 SAFE fallback
 
-        let botText = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          botText += decoder.decode(value);
-
-          setChat((prev) => {
-            const updated = [...prev];
-            updated[updated.length - 1].bot = botText;
-            return updated;
-          });
-        }
+  setChat((prev) => {
+    const updated = [...prev];
+    updated[updated.length - 1].bot = text;
+    return updated;
+  });
       }
     } catch {
       setChat((prev) => {
@@ -128,14 +122,14 @@ function App() {
   };
 
   // ================= WHAT-IF SIMULATOR =================
-  const sendSim = async () => {
+const sendSim = async () => {
   if (!simInput.trim()) return;
 
   const userMessage = simInput.trim();
   setSimInput("");
 
   try {
-    const response = await fetch("https://scholar-ai-backend-3413.onrender.com/chat", {
+    const response = await fetch(API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -143,15 +137,7 @@ function App() {
       body: JSON.stringify({ message: userMessage }),
     });
 
-    const contentType = response.headers.get("content-type");
-
-    let data;
-
-    if (contentType && contentType.includes("application/json")) {
-      data = await response.json();
-    } else {
-      data = { text: "Invalid response from server." };
-    }
+    const data = await response.json(); // ✅ ONLY JSON
 
     setSimChat((prev) => [
       ...prev,
@@ -160,7 +146,9 @@ function App() {
         bot: data,
       },
     ]);
-  } catch {
+  } catch (err) {
+    console.error(err);
+
     setSimChat((prev) => [
       ...prev,
       {
@@ -170,7 +158,6 @@ function App() {
     ]);
   }
 };
-
   return (
     <div className="app">
       {/* NAVBAR */}
