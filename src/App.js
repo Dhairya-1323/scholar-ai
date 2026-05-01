@@ -57,33 +57,33 @@ function App() {
       if (contentType && contentType.includes("application/json")) {
         const data = await response.json();
 
-        if (typeof data === "object" && data.summary) {
-          let i = 0;
-          let text = data.summary;
-          let temp = "";
+      if (typeof data === "object" && (data.summary || data.text)) {
+  let i = 0;
+  let text = data.summary || data.text;
+  let temp = "";
 
-          setDisplayedText("");
+  setDisplayedText("");
 
-          function typeWriter() {
-            if (i < text.length) {
-              temp += text.charAt(i);
-              setDisplayedText(temp);
-              i++;
-              setTimeout(typeWriter, 15);
-            } else {
-              setChat((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1].bot = {
-                  ...data,
-                  summary: text,
-                };
-                return updated;
-              });
-            }
-          }
+  function typeWriter() {
+    if (i < text.length) {
+      temp += text.charAt(i);
+      setDisplayedText(temp);
+      i++;
+      setTimeout(typeWriter, 15);
+    } else {
+      setChat((prev) => {
+        const updated = [...prev];
+        updated[updated.length - 1].bot = {
+          ...data,
+          text: text,   
+        };
+        return updated;
+      });
+    }
+  }
 
-          typeWriter();
-        } else {
+  typeWriter();
+} else {
           setChat((prev) => {
             const updated = [...prev];
             updated[updated.length - 1].bot = data;
@@ -137,7 +137,7 @@ const sendSim = async () => {
       body: JSON.stringify({ message: userMessage }),
     });
 
-    const data = await response.json(); // ✅ ONLY JSON
+    const data = await response.json(); 
 
     setSimChat((prev) => [
       ...prev,
@@ -185,10 +185,11 @@ const sendSim = async () => {
 
                   {typeof c.bot === "object" && (
                     <>
-                      {c.bot.summary && (
-                        <p>{displayedText || c.bot.summary}</p>
-                      )}
-
+                      {c.bot.text && (
+  <p style={{ whiteSpace: "pre-line" }}>
+    {displayedText || c.bot.text}
+  </p>
+)}
                       {c.bot.recommendations &&
                         c.bot.recommendations.map((u, idx) => (
                           <div className="card" key={idx}>
@@ -198,12 +199,29 @@ const sendSim = async () => {
                             </a>
                           </div>
                         ))}
+                         {/*  PLAN DETAILS  */}
+    {c.bot.details && (
+      <div className="plan-box">
+        <p><b>💰 Cost:</b> {c.bot.details.cost.tuition}</p>
+        <p><b>🏠 Living:</b> {c.bot.details.cost.living}</p>
+        <p><b>💳 EMI:</b> ₹{c.bot.details.loan.emi}/month</p>
+        <p><b>📈 Salary:</b> ₹{c.bot.details.roi.salary}/month</p>
+        <p><b>⏱ ROI:</b> {c.bot.details.roi.time} years</p>
+      </div>
+    )}
+    {/*  FOLLOW-UP TEXT */}
+    {c.bot.followUp && (
+<p className="followup-text" style={{ whiteSpace: "pre-line" }}>
+  {c.bot.followUp}
+</p>    )}
+    
                     </>
                   )}
                 </div>
               </div>
             </div>
           ))}
+          
 
           {loading && (
             <div className="thinking">
