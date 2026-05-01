@@ -30,7 +30,7 @@ function App() {
   const API_URL =
   process.env.NODE_ENV === "development"
     ? "http://localhost:5000/chat"
-    : "https://scholar-ai-backend-3413.onrender.com/chat";
+    : "https://scholarai-backend-6o1j.onrender.com";
   const send = async () => {
     if (!msg.trim()) return;
 
