@@ -102,10 +102,11 @@ I can:
     greetings.some((g) => text.startsWith(g)) && text.length < 15;
 
   if (greetings.includes(text) || isShortGreeting) {
-    return res.json({
-      text: "Hey 👋 Tell me your plan — course, country, or budget.",
-    });
-  }
+  return streamResponse(
+    res,
+    "Hey 👋 Tell me your plan — course, country, or budget."
+  );
+}
 
   // ================= RESET =================
   if (text.includes("reset")) {
@@ -167,13 +168,73 @@ I can:
     course: course || userProfile.course,
     budget: budget || userProfile.budget,
   });
-if (
-  course &&
-  !userProfile.country &&
-  text.includes("study")
-) {
-  return streamResponse(res, `Which country for ${course}?`);
+  const finalCourse = course || userProfile.course;
+const finalCountry = country || userProfile.country;
+const finalBudget = budget || userProfile.budget;
+
+
+
+// ================= COURSE BUT NO COUNTRY =================
+if (finalCourse && !finalCountry) {
+  if (finalBudget) {
+    const suggested = suggestCountries(finalBudget);
+
+    return streamResponse(
+      res,
+      `Based on your budget, these countries fit well 👇
+
+• ${suggested.slice(0, 3).join("\n• ")}
+
+Which one are you interested in?`
+    );
+  }
+
+  return streamResponse(res, `Which country for ${finalCourse}?`);
 }
+
+// ================= FOLLOW-UP COUNTRY =================
+if (country && finalCourse && finalBudget) {
+  const universities = await searchUniversities(
+    `${finalCourse} universities in ${country}`
+  );
+
+  const structured = buildResponse({
+    country,
+    course: finalCourse,
+    budget: finalBudget,
+    universities,
+  });
+
+  return res.json({
+  text: `Great choice 👍 — here’s how your ${finalCourse} journey in ${country} would look 👇
+
+🎓 Investment side:
+You’ll need to manage tuition + living costs carefully.
+
+💼 Return side:
+Salary potential is decent, but recovery speed matters here.
+
+📊 What this means:
+This helps you understand how financially comfortable this path will be.
+
+👉 Here are the exact numbers:`,
+
+  recommendations: structured.recommendations,
+
+  details: {
+    cost: structured.cost,
+    loan: structured.loan,
+    roi: structured.roi,
+  },
+
+  followUp: `What would you like to explore next?
+
+• 🎓 Universities  
+• 📊 ROI breakdown  
+• ⚖️ Compare countries`,
+});
+}
+
   // ================= WHAT-IF: SINGLE LOAN =================
 if (text.includes("what if") && text.includes("loan")) {
   const match = text.match(/(\d+)\s*(l|lakh|lakhs)/);
@@ -258,11 +319,10 @@ if (text.includes("what if") && text.includes("study")) {
 if (text.includes("vs") || text.includes("compare")) {
 
   // loan comparison
-  const loanMatch = text.match(/(\d+)\s*l.*?(\d+)\s*l/);
-
-  if (loanMatch) {
-    const amount1 = parseInt(loanMatch[1]) * 100000;
-    const amount2 = parseInt(loanMatch[2]) * 100000;
+const loanMatch = text.match(/(\d+)\s*(l|lakh|lakhs)?\s*vs\s*(\d+)\s*(l|lakh|lakhs)?/);
+ if (loanMatch) {
+  const amount1 = parseInt(loanMatch[1]) * 100000;
+  const amount2 = parseInt(loanMatch[3]) * 100000;
 
     const option1 = calculateLoanDetails(amount1, 10, 10);
     const option2 = calculateLoanDetails(amount2, 10, 10);
@@ -281,7 +341,6 @@ text: `This gives you a clear idea of how your EMI changes with loan size.
 A higher loan increases pressure every month, so choosing the right amount is important for long-term stability.`,});
   }
 
-  // course comparison
   // ================= COURSE COMPARISON =================
 const parts = text.split("vs");
 
@@ -339,58 +398,101 @@ But the right choice still depends on whether you prefer faster recovery or long
   }
 }
 }
+// ================= FOLLOW-UP INTENTS =================
 
- // ================= ROI =================
-if (text.includes("roi")) {
+// ROI follow-up
+if (text.includes("roi") || text.includes("breakdown")) {
+  const loan = calculateLoanDetails(userProfile.budget, 10, 10);
+  const salary = estimateSalary(userProfile.country, userProfile.course);
+  const roi = calculateROI(userProfile.budget, salary, loan.emi);
+
+  return streamResponse(
+    res,
+    `Here’s your detailed ROI 👇
+
+Salary: ₹${salary}
+EMI: ₹${loan.emi}
+Savings: ₹${salary - loan.emi}
+
+Recovery time: ${roi.roiYears} years`
+  );
+}
+
+// comparison follow-up
+if (
+  text.includes("compare") ||
+  text.includes("better roi") ||
+  text.includes("better option") ||
+  text.includes("cheaper country")
+) {
+  const suggested = suggestCountries(userProfile.budget);
+
+  return streamResponse(
+    res,
+    `Here are better options based on ROI 👇
+
+• ${suggested.slice(0, 3).join("\n• ")}
+
+Which one do you want to explore?`
+  );
+}
+
+// ================= ROI =================
+if (
+  text.includes("roi") &&
+  !text.includes("compare") &&
+  !text.includes("country")
+) {
+
+  // ✅ guard check
+  if (!userProfile.course || !userProfile.country || !userProfile.budget) {
+    return streamResponse(
+      res,
+      "I need your course, country, and budget to calculate ROI properly."
+    );
+  }
+
   const loan = calculateLoanDetails(userProfile.budget, 10, 10);
   const salary = estimateSalary(userProfile.country, userProfile.course);
   const roi = calculateROI(userProfile.budget, salary, loan.emi);
 
   const saving = salary - loan.emi;
 
-  return streamResponse(
-    res,
-    `Good question — this is exactly how you should think about it.
+  updateProfile({ action: "roi_followup" });
 
-If you study ${userProfile.course} in ${userProfile.country}, your expected starting salary could be around ₹${salary}/month.
+ return streamResponse(
+  res,
+  `Here’s a clear breakdown of your ROI 👇
 
-After paying your EMI of ₹${loan.emi}, you’ll still have roughly ₹${saving} left each month.
+💼 Monthly Income:
+₹${salary}
 
-That means you recover your full investment in about ${roi.roiYears} years.
+💳 Loan EMI:
+₹${loan.emi}
 
-👉 In simple terms: ${
-      roi.roiYears < 3
-        ? "this is a very strong financial decision"
-        : roi.roiYears < 5
-        ? "this is decent, but not the fastest return"
-        : "this is slow — you’re taking higher financial risk"
-    }.
+💰 Real Savings:
+₹${saving} per month
 
-If your goal is to reduce pressure and recover faster, I’d suggest looking at cheaper countries.
+⏱ Recovery Time:
+${roi.roiYears} years
 
-Do you want me to show you better ROI options?`
-  );
+👉 What this means:
+${
+  roi.roiYears < 3
+    ? "You can recover your investment quickly — this is financially strong."
+    : roi.roiYears < 5
+    ? "This is manageable, but requires planning."
+    : "This is slow — you should consider lower-cost options."
+}`
+);
 }
 
-  // ================= BREAKDOWN =================
-  if (text.includes("breakdown")) {
-    return streamResponse(
-      res,
-      `Tuition: ₹20–50L/year
-Living: ₹60K–1.2L/month
-
-Germany has low tuition, so most cost is living.`
-    );
-  }
-
 // ================= UNIVERSITIES =================
-if (
-  text.includes("university") ||
-  text.includes("universities") ||
-  text.includes("college") ||
-  text.includes("colleges")
-) {
-  //  curated fallback (prevents blog links)
+const isUniversityQuery =
+  /(universit|college)/.test(text);
+
+if (isUniversityQuery) {
+  // curated (high quality)
   const curated = {
     UK: [
       { name: "University of Oxford", link: "https://www.ox.ac.uk" },
@@ -406,55 +508,209 @@ if (
       { name: "University of Freiburg", link: "https://www.uni-freiburg.de" },
       { name: "University of Tübingen", link: "https://uni-tuebingen.de" },
     ],
+    USA: [
+      { name: "Harvard University", link: "https://www.harvard.edu" },
+      { name: "Stanford University", link: "https://www.stanford.edu" },
+      { name: "MIT", link: "https://www.mit.edu" },
+      { name: "University of Chicago", link: "https://www.uchicago.edu" },
+      { name: "Columbia University", link: "https://www.columbia.edu" },
+    ],
   };
 
-  const list =
-    curated[userProfile.country] ||
-    (await searchUniversities(
-      `${userProfile.course} universities in ${userProfile.country}`
-    ));
-
-  updateProfile({ action: "university_followup" });
-
-  return res.json({
-    text: `Good choice 👍 If you're targeting ${userProfile.country}, these are strong options you should seriously consider:`,
-
-    recommendations: list.slice(0, 5),
-
-    followUp:
-      "Do you want options that are easier to get into, or ones with better ROI?",
-  });
-}
-
-  // ================= SMART FLOW =================
+  //  missing course
   if (!userProfile.course) {
     return streamResponse(res, "What do you want to study?");
   }
 
-  if (userProfile.course && userProfile.budget && !userProfile.country) {
-    const suggested = suggestCountries(userProfile.budget);
+  //  missing country → guide properly
+  if (!userProfile.country) {
+    if (userProfile.budget) {
+      const suggested = suggestCountries(userProfile.budget);
 
-    return streamResponse(
-      res,
-      `Based on your budget:
+      updateProfile({ action: "country_suggestion" });
+
+      return streamResponse(
+        res,
+        `Based on your budget, these countries fit well 👇
 
 • ${suggested.slice(0, 3).join("\n• ")}
 
-Which one interests you?`
-    );
-  }
+Which country should I show universities for?`
+      );
+    }
 
-  if (userProfile.course && !userProfile.country) {
-    return streamResponse(res, `Which country for ${userProfile.course}?`);
-  }
-
-  if (userProfile.course && userProfile.country && !userProfile.budget) {
     return streamResponse(
       res,
-      `What’s your budget for ${userProfile.course} in ${userProfile.country}?`
+      `Which country are you targeting for ${userProfile.course}?`
     );
   }
 
+  // HYBRID LOGIC
+  let list = curated[userProfile.country];
+
+  if (!list || list.length === 0) {
+    list = await searchUniversities(
+      `${userProfile.course} universities in ${userProfile.country}`
+    );
+  }
+
+  if (!list || list.length === 0) {
+    list = [
+      {
+        name: `Top universities in ${userProfile.country}`,
+        link: `https://www.google.com/search?q=${encodeURIComponent(
+          userProfile.course + " universities in " + userProfile.country
+        )}`,
+      },
+      {
+        name: `${userProfile.country} university list`,
+        link: `https://en.wikipedia.org/wiki/List_of_universities_in_${userProfile.country}`,
+      },
+    ];
+  }
+
+  updateProfile({ action: "university_followup" });
+
+  return res.json({
+    text: curated[userProfile.country]
+      ? `Top universities you should consider in ${userProfile.country} 👇`
+      : `Here are some universities you can explore in ${userProfile.country} 👇`,
+
+    recommendations: list.slice(0, 5),
+
+    followUp: "Do you want safer options or better ROI?",
+  });
+}
+// ================= SAFER OPTIONS =================
+if (text.includes("safer")) {
+  const suggested = suggestCountries(userProfile.budget);
+
+  return streamResponse(
+    res,
+    `If you want safer financial options, consider 👇
+
+• ${suggested.slice(0, 3).join("\n• ")}
+
+These reduce cost and risk compared to ${userProfile.country}.
+
+Which one do you want to explore?`
+  );
+}
+
+// ================= AUTO PLAN =================
+if (
+  finalCourse &&
+  finalCountry &&
+  finalBudget &&
+  !text.includes("vs") &&   // 
+  (
+    country ||
+    budget ||
+    text.includes("plan")
+  )
+) {  const universities = await searchUniversities(
+    `${finalCourse} universities in ${finalCountry}`
+  );
+
+  const structured = buildResponse({
+    country: finalCountry,
+    course: finalCourse,
+    budget: finalBudget,
+    universities,
+  });
+
+  return res.json({
+  text: `Alright — here’s a clear breakdown of your ${finalCourse} plan in ${finalCountry} 👇
+
+🎓 Investment side:
+You’re looking at tuition + living costs that add up significantly, so planning finances properly is important.
+
+💼 Return side:
+The salary potential after graduation is strong, which helps in faster recovery.
+
+📊 What this means:
+This gives you a realistic idea of how quickly you can recover your investment and how much financial pressure you'll face.
+
+👉 Here are the exact numbers so you can evaluate this clearly:`,
+
+  recommendations: structured.recommendations,
+
+  details: {
+    cost: structured.cost,
+    loan: structured.loan,
+    roi: structured.roi,
+  },
+
+  followUp: `What would you like to explore next? 👇
+
+• 🎓 See top universities
+• 📊 Get detailed ROI breakdown
+• ⚖️ Compare with other countries`,
+});
+}
+ // ================= FLEXIBLE FLOW =================
+
+// 1. Nothing known
+if (!userProfile.course && !userProfile.country && !userProfile.budget) {
+  return streamResponse(
+    res,
+    "Tell me your plan — what do you want to study, where, or your budget?"
+  );
+}
+
+// 2. Only country given
+if (!userProfile.course && userProfile.country) {
+  return streamResponse(
+    res,
+    `Nice 👍 What do you want to study in ${userProfile.country}?`
+  );
+}
+
+// 3. Only course given
+if (userProfile.course && !userProfile.country) {
+  return streamResponse(
+    res,
+    `Which country are you targeting for ${userProfile.course}?`
+  );
+}
+
+// 4. Only budget given
+if (!userProfile.course && !userProfile.country && userProfile.budget) {
+  return streamResponse(
+    res,
+    `Got it. What do you want to study, and in which country?`
+  );
+}
+
+// 5. course + budget 
+if (userProfile.course && userProfile.budget && !userProfile.country) {
+  const suggested = suggestCountries(userProfile.budget);
+
+  return streamResponse(
+    res,
+    `Based on your budget, these countries fit well 👇
+
+• ${suggested.slice(0, 3).join("\n• ")}
+
+Which country are you considering?`
+  );
+}
+
+// 6. country + budget
+if (!userProfile.course && userProfile.country && userProfile.budget) {
+  return streamResponse(
+    res,
+    `What do you want to study in ${userProfile.country}?`
+  );
+}
+
+// 7. country + course 
+if (userProfile.course && userProfile.country && !userProfile.budget) {
+  return streamResponse(
+    res,
+    `What’s your budget for ${userProfile.course} in ${userProfile.country}?`
+  );
+}
   // ================= FINAL =================
   const suggested = suggestCountries(userProfile.budget);
 
@@ -479,23 +735,28 @@ Which one interests you?`
     budget: userProfile.budget,
     universities,
   });
+const advisorData = !userProfile.country
+  ? {
+      bestCountry,
+      alternatives: [...new Set(suggested)].filter(
+        (c) => c !== bestCountry
+      ),
+    }
+  : null;
 
-  const summary = "Here’s a quick overview of your plan:";
+return res.json({
+  text: `Here’s a quick overview of your ${userProfile.course} plan in ${targetCountry}:`,
 
-  const advisorData = !userProfile.country
-    ? {
-        bestCountry,
-        alternatives: [...new Set(suggested)].filter(
-          (c) => c !== bestCountry
-        ),
-      }
-    : null;
+  recommendations: structured.recommendations,
 
-  return res.json({
-    ...structured,
-    advisor: advisorData,
-    summary,
-  });
+  details: {
+    cost: structured.cost,
+    loan: structured.loan,
+    roi: structured.roi,
+  },
+
+  advisor: advisorData,
+});
 });
 
 const PORT = process.env.PORT || 5000;
