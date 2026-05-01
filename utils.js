@@ -1,24 +1,41 @@
 import fetch from "node-fetch";
 
-// ================= UNIVERSITY FETCH =================
-export async function fetchUniversities(country) {
+export async function searchUniversities(query) {
   try {
     const res = await fetch(
-      `http://universities.hipolabs.com/search?country=${country}`
+      `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${process.env.SERP_API_KEY}`
     );
 
     const data = await res.json();
 
-    return data.slice(0, 5).map((u) => ({
-      name: u.name,
-      website: u.web_pages[0],
-    }));
+    return (data.organic_results || [])
+      .filter((r) =>
+        r.link &&
+        !r.link.includes("blog") &&
+        !r.link.includes("news") &&
+        !r.link.includes("ranking") &&
+        !r.link.includes("top-") &&
+        !r.link.includes("list") &&
+        (
+          r.link.includes(".edu") ||
+          r.link.includes(".ac.") ||
+          r.link.match(/\/(university|college)/i)
+        )
+      )
+      .map((r) => ({
+        name: r.title
+          .replace(/[-|–].*$/, "")
+          .replace(/\s+/g, " ")
+          .trim(),
+        link: r.link,
+      }))
+      .slice(0, 5);
+
   } catch (err) {
-    console.log("University API error:", err);
+    console.log("searchUniversities error:", err);
     return [];
   }
 }
-
 // ================= LOAN =================
 export function calculateLoanDetails(P, annualRate, years) {
   const r = annualRate / (12 * 100);
@@ -64,8 +81,8 @@ export function calculateROI(loanAmount, monthlySalary, emi) {
 
   const years = (loanAmount / savings / 12).toFixed(1);
 
-  return {
-    roiYears: `${years} years`,
+ return {
+  roiYears: parseFloat(years),  
     message: `You recover investment in ~${years} years.`,
   };
 }
@@ -97,7 +114,7 @@ export function buildResponse({ country, course, budget, universities }) {
   };
 }
 
-// ================= 🔥 SMART COUNTRY SUGGESTION =================
+// ================= SMART COUNTRY SUGGESTION =================
 export function suggestCountries(budget) {
   if (!budget) return [];
 
@@ -167,23 +184,4 @@ export function compareLoans(a1, a2) {
     option1: calculateLoanDetails(a1, 10, 10),
     option2: calculateLoanDetails(a2, 10, 10),
   };
-}
-export async function searchUniversities(query) {
-  try {
-    const res = await fetch(
-      `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&engine=google&api_key=${process.env.SERPAPI_KEY}`
-    );
-
-    const data = await res.json();
-
-    return (data.organic_results || [])
-      .map((item) => ({
-        name: item.title,
-        link: item.link,
-      }))
-      .slice(0, 5);
-  } catch (err) {
-    console.log("Search error:", err);
-    return [];
-  }
 }
